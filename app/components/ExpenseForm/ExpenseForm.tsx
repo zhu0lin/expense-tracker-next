@@ -1,3 +1,4 @@
+'use client' 
 // src/components/ExpenseForm/ExpenseForm.tsx
 import React, { useState } from 'react';
 import type { ExpenseCategory } from '../ExpenseCard/ExpenseCard';

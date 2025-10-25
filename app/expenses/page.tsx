@@ -3,8 +3,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import ExpenseCard from '@/components/ExpenseCard/ExpenseCard'
-import type { ExpenseCategory } from '@/components/ExpenseCard/ExpenseCard';
+import ExpenseCard, { type ExpenseCategory } from '../components/ExpenseCard/ExpenseCard'
 
 interface Expense {
   id: number;
