@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
-import { s3Client, BUCKET_NAME } from '@/lib/s3';
+import { s3Client, BUCKET_NAME } from '@/app/lib/s3';
 
 /**
  * POST /api/upload-receipt

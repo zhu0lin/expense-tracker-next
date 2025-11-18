@@ -1,4 +1,4 @@
-'use client' 
+'use client'
 // src/components/ExpenseForm/ExpenseForm.tsx
 import React, { useState } from 'react';
 import type { ExpenseCategory } from '../ExpenseCard/ExpenseCard';
@@ -9,6 +9,15 @@ interface ExpenseFormData {
     amount: string;
     category: ExpenseCategory;
     date: string;
+    receiptUrl?: string;
+}
+
+interface FormErrors {
+    description?: string;
+    amount?: string;
+    category?: string;
+    date?: string;
+    receipt?: string;  // NEW: For receipt upload errors
 }
 
 /**
@@ -22,6 +31,9 @@ interface ExpenseFormProps {
         amount: number;
         category: ExpenseCategory;
         date: string;
+        receiptUrl?: string;  // NEW: Optional receipt URL
+        // When form uploads receipt, this will be the S3 URL
+        // When no receipt selected, this will be undefined
     }) => void;
 }
 
@@ -33,6 +45,57 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ onSubmit }) => {
         category: 'Food',
         date: new Date().toISOString().split('T')[0] // Today's date as default
     });
+
+    // Receipt upload state
+    const [receipt, setReceipt] = useState<File | null>(null);
+    const [uploading, setUploading] = useState(false);
+    const [errors, setErrors] = useState<FormErrors>({});
+
+    /**
+     * Handles receipt file selection from file input
+     * Validates file type and size before storing in state
+     */
+    const handleReceiptChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
+        // Check if user selected a file
+        // e.target.files is FileList (array-like) or null
+        if (e.target.files && e.target.files[0]) {
+            const file = e.target.files[0];
+
+            // VALIDATION 1: Check file type
+            // file.type is MIME type: 'image/jpeg', 'image/png', etc.
+            // .startsWith('image/') accepts any image type
+            // Rejects: 'application/pdf', 'text/plain', 'video/mp4', etc.
+            if (!file.type.startsWith('image/')) {
+                // Set error message for user
+                setErrors(prev => ({
+                    ...prev,
+                    receipt: 'Please select an image file (JPG, PNG, GIF)'
+                }));
+                // Clear selected file
+                setReceipt(null);
+                return; // Stop here, don't proceed
+            }
+
+            // VALIDATION 2: Check file size
+            // file.size is in bytes
+            // 5MB = 5 * 1024 KB = 5 * 1024 * 1024 bytes = 5,242,880 bytes
+            const MAX_SIZE = 5 * 1024 * 1024; // 5MB
+            if (file.size > MAX_SIZE) {
+                setErrors(prev => ({
+                    ...prev,
+                    receipt: 'File size must be less than 5MB'
+                }));
+                setReceipt(null);
+                return;
+            }
+
+            // File is valid! Store it in state
+            setReceipt(file);
+
+            // Clear any previous errors
+            setErrors(prev => ({ ...prev, receipt: undefined }));
+        }
+    };
 
     /**
      * Handles input changes for all form fields using computed property names
@@ -52,37 +115,122 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ onSubmit }) => {
      * Handles form submission with validation and data processing
      * @param {React.FormEvent<HTMLFormElement>} e - Form submission event
      */
-    const handleSubmit = (e: React.FormEvent<HTMLFormElement>): void => {
+    /**
+ * Handles form submission
+ * Two-step process:
+ * 1. Upload receipt to S3 (if selected)
+ * 2. Submit expense data with receipt URL to parent
+ */
+    const handleSubmit = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
+        // Prevent default form submission (page reload)
         e.preventDefault();
 
-        // Basic validation
-        if (!formData.description.trim() || !formData.amount || !formData.date) {
-            alert('Please fill in all required fields');
-            return;
+        // STEP 1: Validate expense form fields (unchanged from before)
+        const validationErrors: FormErrors = {};
+
+        if (!formData.description.trim()) {
+            validationErrors.description = 'Description is required';
         }
 
         const amount = parseFloat(formData.amount);
-        if (amount <= 0) {
-            alert('Amount must be greater than 0');
+        if (isNaN(amount) || amount <= 0) {
+            validationErrors.amount = 'Amount must be a positive number';
+        }
+
+        if (!formData.date) {
+            validationErrors.date = 'Date is required';
+        }
+
+        // If any validation errors, show them and stop
+        if (Object.keys(validationErrors).length > 0) {
+            setErrors(validationErrors);
             return;
         }
 
-        // Submit processed data
-        onSubmit({
-            description: formData.description.trim(),
-            amount: amount,
-            category: formData.category,
-            date: formData.date
-        });
+        // Validation passed - clear errors and start upload
+        setErrors({});
+        setUploading(true); // Disable button, show "Uploading..." text
 
-        // Reset form after successful submission
-        setFormData({
-            description: '',
-            amount: '',
-            category: 'Food',
-            date: new Date().toISOString().split('T')[0]
-        });
+        try {
+            // Variable to store receipt URL (if uploaded)
+            let receiptUrl: string | undefined;
+
+            // STEP 2: Upload receipt if user selected one (NEW!)
+            if (receipt) {
+                // Create FormData to send file to API
+                // FormData is the browser's way to send files in HTTP requests
+                const receiptFormData = new FormData();
+
+                // Append file with field name 'receipt'
+                // This name must match what the API expects: formData.get('receipt')
+                receiptFormData.append('receipt', receipt);
+
+                // Send POST request to upload API
+                const uploadResponse = await fetch('/api/upload-receipt', {
+                    method: 'POST',
+                    body: receiptFormData,  // Browser sets correct Content-Type automatically
+                });
+
+                // Check if upload was successful
+                if (!uploadResponse.ok) {
+                    // Upload failed - get error message from API response
+                    const errorData = await uploadResponse.json();
+                    throw new Error(errorData.error || 'Failed to upload receipt');
+                }
+
+                // Upload succeeded - extract receipt URL from response
+                const uploadData = await uploadResponse.json();
+                // uploadData structure: { success: true, filename: "...", url: "http://..." }
+                receiptUrl = uploadData.url;
+
+                // At this point, receipt is in S3 and we have its URL!
+            }
+
+            // STEP 3: Submit expense data to parent component (MODIFIED!)
+            // Now includes optional receiptUrl
+            onSubmit({
+                description: formData.description.trim(),
+                amount: parseFloat(formData.amount),
+                category: formData.category,
+                date: formData.date,
+                receiptUrl,  // NEW: Will be S3 URL or undefined (if no receipt)
+            });
+
+            // STEP 4: Reset form on success (MODIFIED!)
+            // Clear all form fields
+            setFormData({
+                description: '',
+                amount: '',
+                category: 'Food',
+                date: new Date().toISOString().split('T')[0]
+            });
+
+            // NEW: Clear receipt state
+            setReceipt(null);
+
+            // NEW: Reset file input element (otherwise shows "file selected")
+            const fileInput = document.getElementById('receipt-input') as HTMLInputElement;
+            if (fileInput) {
+                fileInput.value = ''; // Clear the file input
+            }
+
+        } catch (error) {
+            // NEW: Handle receipt upload errors
+            console.error('Submission error:', error);
+
+            // Show error to user
+            setErrors({
+                receipt: error instanceof Error
+                    ? error.message  // Use specific error message if available
+                    : 'Failed to upload receipt'
+            });
+        } finally {
+            // NEW: Always reset uploading flag (whether success or error)
+            // Ensures button re-enables so user can try again
+            setUploading(false);
+        }
     };
+
 
     return (
         <form className="bg-white rounded-lg p-6 mb-8 shadow-sm border border-gray-200" onSubmit={handleSubmit}>
@@ -150,11 +298,41 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ onSubmit }) => {
                 />
             </div>
 
-            <button 
-                type="submit" 
-                className="w-full px-4 py-2.5 bg-indigo-600 text-white font-medium text-sm rounded-md hover:bg-indigo-700 hover:-translate-y-0.5 transition-all duration-200 focus:outline-none focus:ring-3 focus:ring-indigo-100 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+            {/* Receipt upload field */}
+            <div className="mb-6">
+                <label htmlFor="receipt-input" className="block text-sm font-medium text-gray-700 mb-1.5">
+                    Receipt (Optional)
+                </label>
+                <input
+                    type="file"
+                    id="receipt-input"
+                    accept="image/*"
+                    onChange={handleReceiptChange}
+                    disabled={uploading}
+                    className="block w-full text-sm text-gray-900 border border-gray-300 rounded-lg cursor-pointer bg-gray-50"
+                />
+                {receipt && (
+                    <p className="mt-2 text-sm text-gray-600">
+                        Selected: <span className="font-medium">{receipt.name}</span>
+                        {' '}({(receipt.size / 1024).toFixed(2)} KB)
+                    </p>
+                )}
+                {errors.receipt && (
+                    <span className="text-red-500 text-xs mt-1 block">{errors.receipt}</span>
+                )}
+                <p className="mt-1 text-xs text-gray-500">PNG, JPG, GIF up to 5MB</p>
+            </div>
+
+            {/* Submit button */}
+            <button
+                type="submit"
+                disabled={uploading}
+                className={`w-full py-3 px-4 rounded-md font-medium transition-all duration-200 ${uploading
+                        ? 'bg-gray-300 cursor-not-allowed'
+                        : 'bg-indigo-600 hover:bg-indigo-700 text-white hover:-translate-y-0.5 focus:outline-none focus:ring-3 focus:ring-indigo-100'
+                    }`}
             >
-                Add Expense
+                {uploading ? 'Uploading Receipt...' : 'Add Expense'}
             </button>
         </form>
     );

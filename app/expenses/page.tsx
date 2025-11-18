@@ -3,7 +3,12 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import ExpenseCard, { type ExpenseCategory } from '../components/ExpenseCard/ExpenseCard'
+import Header from '../components/Header/Header'
+import ExpenseSummary from '../components/ExpenseSummary/ExpenseSummary'
+import ExpenseForm from '../components/ExpenseForm/ExpenseForm'
+import ExpenseList from '../components/ExpenseList/ExpenseList'
+import ExpenseCard from '../components/ExpenseCard/ExpenseCard'
+import type { ExpenseCategory } from '../components/ExpenseCard/ExpenseCard';
 
 interface Expense {
   id: number;
@@ -11,6 +16,7 @@ interface Expense {
   amount: number;
   category: ExpenseCategory;
   date: string;
+  receiptUrl?: string;
 }
 
 export default function ExpensesPage() {
@@ -57,6 +63,9 @@ export default function ExpensesPage() {
     <div className="min-h-screen p-8 bg-gray-50">
       <div className="max-w-4xl mx-auto">
         <h1 className="text-3xl font-bold text-gray-900 mb-4">Your Expenses</h1>
+
+          {/* Expense Form */}
+          <ExpenseForm onSubmit={handleAddExpense} />
 
           {/* Summary Card */}
           <div className="bg-white rounded-lg p-4 shadow-sm mb-6">

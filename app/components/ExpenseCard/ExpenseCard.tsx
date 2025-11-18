@@ -11,11 +11,12 @@ export interface ExpenseCardProps {
   id: number;
   description: string;
   amount: number;
-  category: ExpenseCategory;         
+  category: ExpenseCategory;
   date: string;
-  onDelete?: (id: number) => void;    
-  highlighted?: boolean;              
-  showCategory?: boolean;            
+  receiptUrl?: string;
+  onDelete?: (id: number) => void;
+  highlighted?: boolean;
+  showCategory?: boolean;
 }
 
 // Component logic - IDENTICAL to Vite version!
@@ -25,6 +26,7 @@ const ExpenseCard: React.FC<ExpenseCardProps> = ({
   amount,
   category,
   date,
+  receiptUrl,
   highlighted = false,
   showCategory = true,
   onDelete
@@ -33,21 +35,21 @@ const ExpenseCard: React.FC<ExpenseCardProps> = ({
     style: 'currency',
     currency: 'USD'
   }).format(amount)
-  
+
   const formattedDate = new Date(date).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
     year: "numeric",
     timeZone: "UTC"  // Force UTC to prevent date shifting across timezones
   });
-  
-   const handleDelete = (e: React.MouseEvent) => {
+
+  const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (onDelete) {
       onDelete(id);
     }
   };
-  
+
   // JSX - IDENTICAL to Vite! Tailwind works the same.
   return (
     <article className={`
@@ -67,17 +69,36 @@ const ExpenseCard: React.FC<ExpenseCardProps> = ({
           {formattedDate}
         </time>
       </div>
-      
+
       {/* Content: Description and Amount */}
       <div className="space-y-4">
         <h3 className="mb-2 text-base font-medium text-gray-900">{description}</h3>
         <p className="m-0 text-lg font-bold text-green-600">{formattedAmount}</p>
       </div>
-        
-        {onDelete && (
-          <div className="flex justify-end pt-2 border-t border-gray-100">
-            <button
-              className="
+
+      {/* Receipt display section */}
+      {receiptUrl && (
+        <div className="mt-3 border-t border-gray-100 pt-3">
+          <div className="flex items-center gap-3">
+            <a
+              href={receiptUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 hover:underline"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <span>View Receipt</span>
+            </a>
+            <span className="text-xs text-gray-500">• Attached</span>
+          </div>
+        </div>
+      )}
+
+
+      {onDelete && (
+        <div className="flex justify-end pt-2 border-t border-gray-100">
+          <button
+            className="
                 text-red-500 hover:text-white
                 hover:bg-red-500
                 border border-red-500
@@ -86,13 +107,13 @@ const ExpenseCard: React.FC<ExpenseCardProps> = ({
                 transition-colors duration-200
                 focus:outline-none focus:ring-2 focus:ring-red-400
               "
-              onClick={handleDelete}
-              aria-label="Delete expense"
-            >
-              Delete
-            </button>
-          </div>
-        )}
+            onClick={handleDelete}
+            aria-label="Delete expense"
+          >
+            Delete
+          </button>
+        </div>
+      )}
     </article>
   )
 }
